@@ -1,7 +1,7 @@
 package com.vidyavriksh.dto;
 
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 @Data
 public class GradeResponse {
@@ -16,5 +16,5 @@ public class GradeResponse {
     private String grade;
     private String semester;
     private String academicYear;
-    private LocalDateTime examDate;
+    private LocalDate examDate;
 }

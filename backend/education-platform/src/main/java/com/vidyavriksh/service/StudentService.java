@@ -1,224 +1,188 @@
 package com.vidyavriksh.service;
 
-import com.vidyavriksh.dto.*;
-import com.vidyavriksh.exception.ResourceNotFoundException;
 import com.vidyavriksh.model.*;
 import com.vidyavriksh.repository.*;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class StudentService {
 
-    private final StudentRepository studentRepository;
-    private final UserRepository userRepository;
+    private final StudentRepository    studentRepository;
+    private final GradeRepository      gradeRepository;
     private final AttendanceRepository attendanceRepository;
-    private final GradeRepository gradeRepository;
-    private final AlertRepository alertRepository;
     private final AssignmentRepository assignmentRepository;
-    private final SubmissionRepository submissionRepository;
+    private final AlertRepository      alertRepository;
+    private final UserRepository       userRepository;
+
+    public List<Student> getAllStudents() {
+      return studentRepository.findAll();
+    }
 
     public Student getStudentById(String id) {
         return studentRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Student not found with id: " + id));
+                .orElseThrow(() -> new RuntimeException("Student not found: " + id));
     }
 
     public Student getStudentByUserId(String userId) {
         return studentRepository.findByUserId(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found for user: " + userId));
+                .orElseThrow(() -> new RuntimeException("Student not found for userId: " + userId));
     }
 
-    public List<Student> getAllStudents() {
-        return studentRepository.findAll();
-    }
-
-    public List<Student> getStudentsByClass(String classGrade, String section) {
-        if (section != null && !section.isEmpty()) {
-            return studentRepository.findByClassGradeAndSection(classGrade, section);
-        }
-        return studentRepository.findByClassGrade(classGrade);
-    }
-
-    @Transactional
-    public Student updateStudent(String id, StudentUpdateRequest request) {
-        Student student = getStudentById(id);
-        
-        if (request.getClassGrade() != null) {
-            student.setClassGrade(request.getClassGrade());
-        }
-        if (request.getSection() != null) {
-            student.setSection(request.getSection());
-        }
-        if (request.getAddress() != null) {
-            student.setAddress(request.getAddress());
-        }
-        if (request.getGuardianName() != null) {
-            student.setGuardianName(request.getGuardianName());
-        }
-        if (request.getGuardianPhone() != null) {
-            student.setGuardianPhone(request.getGuardianPhone());
-        }
-        if (request.getGuardianEmail() != null) {
-            student.setGuardianEmail(request.getGuardianEmail());
-        }
-        if (request.getDateOfBirth() != null) {
-            student.setDateOfBirth(request.getDateOfBirth());
-        }
-        if (request.getGender() != null) {
-            student.setGender(request.getGender());
-        }
-        
-        log.info("Student updated: {}", student.getStudentId());
-        return studentRepository.save(student);
-    }
-
-    @Transactional
+    // Called by AttendanceService after marking attendance
     public void updateAttendancePercentage(String studentId) {
         Student student = getStudentById(studentId);
-        
-        List<Attendance> allAttendance = attendanceRepository.findByStudentId(studentId);
-        
-        if (!allAttendance.isEmpty()) {
-            long totalDays = allAttendance.size();
-            long presentDays = allAttendance.stream()
-                    .filter(a -> "PRESENT".equals(a.getStatus()))
-                    .count();
-            
-            double percentage = (presentDays * 100.0) / totalDays;
-            student.setAttendancePercentage(percentage);
-            student.setTotalPresent((int) presentDays);
-            student.setTotalAbsent((int) (totalDays - presentDays));
-            
-            studentRepository.save(student);
-            log.info("Attendance updated for student: {} - {}%", studentId, percentage);
-            
-            // Create alert if attendance is low
-            if (percentage < 75) {
-                createAttendanceAlert(student, percentage);
-            }
-        }
+        List<Attendance> all = attendanceRepository.findByStudentId(studentId);
+        if (all.isEmpty()) return;
+        long present = all.stream().filter(a -> "PRESENT".equalsIgnoreCase(a.getStatus())).count();
+        double pct = (double) present / all.size() * 100;
+        student.setAttendancePercentage(Math.round(pct * 10.0) / 10.0);
+        student.setTotalPresent((int) present);
+        student.setTotalAbsent((int)(all.size() - present));
+        studentRepository.save(student);
     }
 
-    @Transactional
+    // Called by GradeService after adding a grade
     public void updateGPA(String studentId) {
+        List<Grade> grades = gradeRepository.findByStudentIdOrderByExamDateDesc(studentId);
+        if (grades.isEmpty()) return;
+        double avg = grades.stream().mapToDouble(Grade::getPercentage).average().orElse(0);
+        double gpa = Math.round((avg / 100.0) * 10.0 * 10.0) / 10.0;
         Student student = getStudentById(studentId);
-        
-        List<Grade> grades = gradeRepository.findByStudentId(studentId);
-        
-        if (!grades.isEmpty()) {
-            double totalPercentage = grades.stream()
-                    .mapToDouble(Grade::getPercentage)
-                    .sum();
-            double gpa = (totalPercentage / grades.size()) / 10.0; // Convert to 10-point scale
-            
-            student.setCurrentGPA(gpa);
-            studentRepository.save(student);
-            log.info("GPA updated for student: {} - {}", studentId, gpa);
-            
-            // Create alert if GPA is low
-            if (gpa < 5.0) {
-                createGradeAlert(student, gpa);
-            }
-        }
+        student.setCurrentGPA(gpa);
+        studentRepository.save(student);
     }
 
-    public List<Student> getHighRiskStudents() {
-        return studentRepository.findByRiskLevel("HIGH");
-    }
-
-    public List<Student> getStudentsWithLowAttendance(Double threshold) {
-        return studentRepository.findStudentsWithLowAttendance(threshold);
-    }
-
-    public StudentDashboardData getDashboardData(String studentId) {
-        Student student = getStudentById(studentId);
-        
-        List<Grade> recentGrades = gradeRepository.findByStudentId(studentId)
-                .stream()
-                .sorted((g1, g2) -> g2.getCreatedAt().compareTo(g1.getCreatedAt()))
-                .limit(10)
-                .toList();
-        
-        List<Attendance> recentAttendance = attendanceRepository
-                .findByStudentIdAndDateBetween(studentId, 
-                    LocalDate.now().minusMonths(1), LocalDate.now());
-        
-        List<Alert> activeAlerts = alertRepository
-                .findByStudentIdAndAcknowledged(studentId, false);
-        
-        List<Assignment> upcomingAssignments = assignmentRepository
-                .findByClassGrade(student.getClassGrade());
-        
-        List<Submission> submissions = submissionRepository
-                .findByStudentId(studentId);
-        
-        long pendingSubmissions = upcomingAssignments.stream()
-                .filter(assignment -> submissions.stream()
-                        .noneMatch(sub -> sub.getAssignment().getId().equals(assignment.getId())))
-                .count();
-        
-        return StudentDashboardData.builder()
-                .student(student)
-                .recentGrades(recentGrades)
-                .recentAttendance(recentAttendance)
-                .activeAlerts(activeAlerts)
-                .upcomingAssignments(upcomingAssignments.size())
-                .pendingSubmissions((int) pendingSubmissions)
-                .build();
-    }
-
-    @Transactional
+    // Called by GradeService for gamification
     public void addGamificationPoints(String studentId, int points) {
         Student student = getStudentById(studentId);
-        student.setGamificationPoints(student.getGamificationPoints() + points);
+        int current = student.getGamificationPoints() != null ? student.getGamificationPoints() : 0;
+        student.setGamificationPoints(current + points);
         studentRepository.save(student);
-        log.info("Added {} points to student: {}", points, studentId);
     }
 
-    @Transactional
-    public void addBadge(String studentId, String badge) {
+    public Map<String, Object> getDashboard(String studentId) {
         Student student = getStudentById(studentId);
-        if (!student.getBadges().contains(badge)) {
-            student.getBadges().add(badge);
-            studentRepository.save(student);
-            log.info("Badge '{}' added to student: {}", badge, studentId);
-        }
+
+        // Grades
+        List<Grade> grades = gradeRepository.findByStudentIdOrderByExamDateDesc(studentId);
+        List<Map<String, Object>> gradeList = grades.stream().map(g -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("subject",    g.getSubject());
+            m.put("examType",   g.getExamType());
+            m.put("examDate",   g.getExamDate() != null ? g.getExamDate().toString() : null);
+            m.put("score",      g.getScore());
+            m.put("maxScore",   g.getMaxScore());
+            m.put("percentage", g.getPercentage());
+            m.put("grade",      g.getGrade());
+            return m;
+        }).collect(Collectors.toList());
+
+        // Attendance — your model has @DBRef Student, so query by studentId via DBRef
+        List<Attendance> attendanceList = attendanceRepository.findByStudentId(studentId);
+        List<Map<String, Object>> recentAttendance = attendanceList.stream()
+                .sorted((a, b) -> b.getDate().compareTo(a.getDate()))
+                .limit(14)
+                .map(a -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("date",   a.getDate().toString());
+                    m.put("status", a.getStatus());
+                    return m;
+                }).collect(Collectors.toList());
+
+        // Alerts — @DBRef Student
+        List<Alert> alerts = alertRepository.findByStudentId(studentId);
+        List<Map<String, Object>> alertList = alerts.stream()
+                .filter(al -> !al.isAcknowledged())
+                .map(al -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id",          al.getId());
+                    m.put("message",     al.getMessage());
+                    m.put("description", al.getDescription());
+                    m.put("severity",    al.getSeverity());
+                    m.put("alertType",   al.getAlertType());
+                    m.put("createdAt",   al.getCreatedAt().toString());
+                    return m;
+                }).collect(Collectors.toList());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("student",          student);
+        result.put("recentGrades",     gradeList);
+        result.put("recentAttendance", recentAttendance);
+        result.put("activeAlerts",     alertList);
+        return result;
     }
 
-    private void createAttendanceAlert(Student student, double percentage) {
-        Alert alert = new Alert();
-        alert.setStudent(student);
-        alert.setAlertType("LOW_ATTENDANCE");
-        alert.setSeverity(percentage < 50 ? "HIGH" : "MEDIUM");
-        alert.setMessage("Low attendance detected");
-        alert.setDescription(String.format("Current attendance: %.2f%%", percentage));
-        
-        alertRepository.save(alert);
-        log.info("Attendance alert created for student: {}", student.getStudentId());
+    // Risk prediction using actual Student fields
+    public Map<String, Object> getRiskPrediction(String studentId) {
+        Student student = getStudentById(studentId);
+        int score = 0;
+        List<String> factors         = new ArrayList<>();
+        List<String> recommendations = new ArrayList<>();
+
+        double att = student.getAttendancePercentage() != null ? student.getAttendancePercentage() : 100.0;
+        double gpa = student.getCurrentGPA()           != null ? student.getCurrentGPA()           : 0.0;
+        int    pts = student.getGamificationPoints()   != null ? student.getGamificationPoints()   : 0;
+
+        if (att < 60)       { score += 40; factors.add("Attendance critically low (" + att + "%)");  recommendations.add("Attend all classes regularly"); }
+        else if (att < 75)  { score += 20; factors.add("Attendance below 75%");                      recommendations.add("Improve attendance to at least 75%"); }
+
+        if (gpa < 4.0)      { score += 35; factors.add("GPA critically low (" + gpa + ")");          recommendations.add("Seek academic support from your teacher"); }
+        else if (gpa < 6.0) { score += 15; factors.add("GPA below 6.0");                             recommendations.add("Focus on improving your grades"); }
+
+        if (pts < 30)       { score += 25; factors.add("Very low engagement (" + pts + " pts)");     recommendations.add("Participate more in class activities"); }
+        else if (pts < 100) { score += 10; factors.add("Below-average engagement");                  recommendations.add("Increase classroom participation"); }
+
+        score = Math.min(100, score);
+        String level = score >= 65 ? "HIGH" : score >= 35 ? "MEDIUM" : "LOW";
+
+        student.setDropoutRiskScore((double) score);
+        student.setRiskLevel(level);
+        studentRepository.save(student);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("studentId",       studentId);
+        result.put("riskScore",       score);
+        result.put("riskLevel",       level);
+        result.put("riskFactors",     factors);
+        result.put("recommendations", recommendations.isEmpty()
+                ? List.of("Keep up the good work!", "Maintain your attendance and grades")
+                : recommendations);
+        return result;
     }
 
-    private void createGradeAlert(Student student, double gpa) {
-        Alert alert = new Alert();
-        alert.setStudent(student);
-        alert.setAlertType("POOR_GRADES");
-        alert.setSeverity(gpa < 3.0 ? "HIGH" : "MEDIUM");
-        alert.setMessage("Low GPA detected");
-        alert.setDescription(String.format("Current GPA: %.2f", gpa));
-        
-        alertRepository.save(alert);
-        log.info("Grade alert created for student: {}", student.getStudentId());
+    public List<Map<String, Object>> getAssignments(String studentId) {
+        Student student = getStudentById(studentId);
+        return assignmentRepository.findByClassGrade(student.getClassGrade())
+                .stream().map(a -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("id",          a.getId());
+                    m.put("title",       a.getTitle());
+                    m.put("subject",     a.getSubject());
+                    m.put("description", a.getDescription());
+                    m.put("dueDate",     a.getDueDate() != null ? a.getDueDate().toString() : null);
+                    m.put("myStatus",    "PENDING"); // No submissions map in Assignment model
+                    return m;
+                }).collect(Collectors.toList());
     }
 
-    public void deleteStudent(String id) {
-        Student student = getStudentById(id);
-        studentRepository.delete(student);
-        log.info("Student deleted: {}", id);
+    public List<Grade> getGrades(String studentId) {
+        return gradeRepository.findByStudentIdOrderByExamDateDesc(studentId);
+    }
+
+    public List<Map<String, Object>> getAttendance(String studentId) {
+        return attendanceRepository.findByStudentId(studentId).stream()
+                .sorted((a, b) -> b.getDate().compareTo(a.getDate()))
+                .map(a -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("date",    a.getDate().toString());
+                    m.put("status",  a.getStatus());
+                    m.put("subject", a.getSubject());
+                    return m;
+                }).collect(Collectors.toList());
     }
 }

@@ -12,6 +12,8 @@ public class Alert {
     @Id
     private String id;
     
+    private String teacherId;
+    
     @DBRef
     private Student student;
     

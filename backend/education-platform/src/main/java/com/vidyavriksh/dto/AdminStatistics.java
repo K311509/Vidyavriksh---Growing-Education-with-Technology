@@ -6,13 +6,13 @@ import lombok.Data;
 @Data
 @Builder
 public class AdminStatistics {
-    private Long totalStudents;
-    private Long totalTeachers;
-    private Long highRiskStudents;
-    private Long mediumRiskStudents;
-    private Long lowRiskStudents;
-    private Double averageAttendance;
-    private Double averageGPA;
-    private Long activeAlerts;
-    private Long totalAlerts;
+    private long totalStudents;
+    private long totalTeachers;
+    private long highRiskStudents;
+    private long mediumRiskStudents;
+    private long lowRiskStudents;
+    private double averageAttendance;
+    private double averageGPA;
+    private long activeAlerts;
+    private long totalAlerts;
 }

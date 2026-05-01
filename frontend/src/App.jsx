@@ -19,16 +19,15 @@ function App() {
           <Route path="/" element={<LandingPage />} /> 
           {/* Registration Page */}
           <Route path="/register" element={<Register />} />
+          {/* General Login Page */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           {/* Teacher Dashboard */}
-          <Route path="/Teacher/dashboard" element={<TeacherDashboard />} />
+          <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
           {/*parent Dashboard */}
           <Route path="/parent/dashboard" element={<ParentDashboard />} />  
           {/*Admin Dashboard */}
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
-          {/* General Login Page */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          
           {/* Student Dashboard */}
           <Route path="/student/dashboard" element={<StudentDashboard />} />
         </Routes>

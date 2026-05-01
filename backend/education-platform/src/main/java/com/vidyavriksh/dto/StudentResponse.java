@@ -1,39 +1,43 @@
 package com.vidyavriksh.dto;
 
+import com.vidyavriksh.model.Student;
 import lombok.Data;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
 public class StudentResponse {
     private String id;
+    private String userId;
     private String studentId;
-    private String fullName;
-    private String email;
     private String classGrade;
     private String section;
-    private LocalDate dateOfBirth;
-    private String gender;
-    private String guardianName;
-    private String guardianPhone;
-    private String guardianEmail;
-    
-    // Academic Info
-    private Double currentGPA;
-    private Double attendancePercentage;
-    private Integer totalPresent;
-    private Integer totalAbsent;
-    
-    // Risk Assessment
-    private Double dropoutRiskScore;
+    private Double gpa;
+    private Double attendance;
+    private int engagement;
+    private int riskScore;
     private String riskLevel;
-    private List<String> riskFactors;
-    
-    // Gamification
-    private Integer gamificationPoints;
     private List<String> badges;
-    private Integer streakDays;
-    
-    private LocalDateTime createdAt;
+    private int gamificationPoints;
+    private String name;    // populated from User
+    private String email;   // populated from User
+    private int rollNo;
+    private String avatar;
+
+    public static StudentResponse from(Student s) {
+        StudentResponse r = new StudentResponse();
+        r.id                 = s.getId();
+        r.userId             = s.getUserId();
+        r.studentId          = s.getStudentId();
+        r.classGrade         = s.getClassGrade();
+        r.section            = s.getSection();
+        r.gpa                = s.getCurrentGPA() != null ? s.getCurrentGPA() : 0.0;
+        r.attendance         = s.getAttendancePercentage() != null ? s.getAttendancePercentage() : 0.0;
+        r.engagement         = s.getGamificationPoints() != null ? s.getGamificationPoints() : 0;
+        r.riskScore          = s.getDropoutRiskScore() != null ? s.getDropoutRiskScore().intValue() : 0;
+        r.riskLevel          = s.getRiskLevel() != null ? s.getRiskLevel() : "LOW";
+        r.badges             = s.getBadges();
+        r.gamificationPoints = s.getGamificationPoints() != null ? s.getGamificationPoints() : 0;
+        
+        return r;
+    }
 }

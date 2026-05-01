@@ -1,540 +1,295 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 import {
-  BookOpen,
-  Users,
-  Calendar,
-  Award,
-  LogOut,
-  FilePlus,
-  Eye,
-  Check,
-  Paperclip,
-  Search
+  Users, CheckSquare, BookOpen, Award, AlertTriangle,
+  BarChart2, LogOut, Menu, X, Bell, Home
 } from "lucide-react";
 
-/**
- * TeacherDashboard.jsx
- * Option A - Sidebar layout with these tabs:
- * - Students
- * - Attendance
- * - Grades (upload)
- * - Create Assignment
- * - Assignments & Submissions (view + grade)
- *
- * Note: adjust endpoints if your backend differs.
- */
+// ── Sub-components ─────────────────────────────────────────────────────────────
+import QuickStats       from "../components/teacher/QuickStats";
+import StudentList      from "../components/teacher/StudentList";
+import AttendanceForm   from "../components/teacher/AttendanceForm";
+import CreateAssignment from "../components/teacher/CreateAssignment";
+import TeacherAssignments from "../components/teacher/TeacherAssignments";
+import GradeForm        from "../components/teacher/GradeForm";
+import HighRiskStudents from "../components/teacher/HighRiskStudents";
+import AlertPanel       from "../components/teacher/AlertPanel";
+
+const TABS = [
+  { id: "home",        label: "Overview",    icon: Home },
+  { id: "students",    label: "Students",    icon: Users },
+  { id: "attendance",  label: "Attendance",  icon: CheckSquare },
+  { id: "assignments", label: "Assignments", icon: BookOpen },
+  { id: "grades",      label: "Grades",      icon: Award },
+  { id: "risk",        label: "Risk Monitor",icon: AlertTriangle },
+  { id: "alerts",      label: "Alerts",      icon: Bell },
+];
 
 const TeacherDashboard = () => {
-  const { user, logout } = useAuth() || {};
-  const [tab, setTab] = useState("students");
+  const { user, profileId, logout } = useAuth();
+  const navigate = useNavigate();
 
-  // shared data
-  const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState(null);
+  const [activeTab, setActiveTab] = useState("home");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [teacher, setTeacher]         = useState(null);
+  const [students, setStudents]       = useState([]);
+  const [stats, setStats]             = useState(null);
+  const [alerts, setAlerts]           = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState("");
 
-  // students search/select
-  const [search, setSearch] = useState("");
-  const [selectedClass, setSelectedClass] = useState("");
-  const [selectedSection, setSelectedSection] = useState("");
-
-  // Attendance state
-  const [attendanceMap, setAttendanceMap] = useState({}); // { studentId: "PRESENT"|"ABSENT" }
-
-  // Grades state
-  const [gradesMap, setGradesMap] = useState({}); // { studentId: marks }
-
-  // Assignments state
-  const [assignments, setAssignments] = useState([]);
-  const [newAssignment, setNewAssignment] = useState({
-    title: "",
-    description: "",
-    classGrade: "",
-    section: "",
-    dueDate: ""
-  });
-  const [assignmentFile, setAssignmentFile] = useState(null);
-  const [creatingAssignment, setCreatingAssignment] = useState(false);
-
-  // Submissions view
-  const [selectedAssignment, setSelectedAssignment] = useState(null);
-  const [submissions, setSubmissions] = useState([]);
-  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
-  const [gradingDrafts, setGradingDrafts] = useState({}); // { submissionId: { marks, feedback } }
-
-  useEffect(() => {
-    loadInitial();
-  }, []);
-
-  const loadInitial = async () => {
+  // ── Fetch teacher profile + students + stats ─────────────────────────────────
+  const fetchData = useCallback(async () => {
+    if (!profileId || !user?.id) return;
     setLoading(true);
+    setError("");
     try {
-      const [sRes, aRes] = await Promise.all([
-        api.get("/student").catch(() => ({ data: { data: [] } })),
-        api.get("/assignments").catch(() => ({ data: { data: [] } }))
+      const [teacherRes, studentsRes] = await Promise.all([
+        api.get(`/teacher/profile?userId=${user.id}`),
+        api.get(`/teacher/${profileId}/students`),
       ]);
-      setStudents(sRes?.data?.data || []);
-      setAssignments(aRes?.data?.data || []);
-    } catch (err) {
-      console.error("Load initial error:", err);
-      setMessage({ type: "error", text: "Failed to load data." });
+      const teacherData = teacherRes.data;
+      const studentList = studentsRes.data || [];
+      setTeacher(teacherData);
+      setStudents(studentList);
+
+      // Compute stats from student list (no separate stats endpoint needed)
+      const high = studentList.filter(s => s.riskLevel === "HIGH").length;
+      const avgAtt = studentList.length
+        ? studentList.reduce((a, s) => a + (s.attendance || 0), 0) / studentList.length
+        : 0;
+      const avgGpa = studentList.length
+        ? studentList.reduce((a, s) => a + (s.gpa || 0), 0) / studentList.length
+        : 0;
+      setStats({
+        totalStudents: studentList.length,
+        highRiskStudents: high,
+        averageAttendance: avgAtt,
+        averageGPA: avgGpa,
+      });
+      setAlerts([]); // alerts from backend optional
+      // Replace your fetchData catch block with this:
+} catch (err) {
+  const status = err.response?.status;
+
+  // Stale session — user no longer exists in DB
+  if (status === 400 || status === 401 || status === 403) {
+    localStorage.clear();
+    sessionStorage.clear();
+    logout();
+    navigate("/login");
+    return;
+    }
+
+     setError(err.response?.data?.error || "Failed to load dashboard. Check your connection.");
     } finally {
-      setLoading(false);
-    }
-  };
+    
+       setLoading(false);
+     }
+ }, [profileId, user]);
 
-  // Filtered students by search/class/section
-  const filteredStudents = students.filter((s) => {
-    const name = s.user?.fullName || "";
-    if (search && !name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (selectedClass && String(s.classGrade) !== String(selectedClass)) return false;
-    if (selectedSection && String(s.section).toLowerCase() !== String(selectedSection).toLowerCase()) return false;
-    return true;
-  });
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  /* ---------- Attendance ---------- */
-  const initAttendanceForFiltered = () => {
-    const map = {};
-    filteredStudents.forEach((s) => {
-      map[s.studentId] = "PRESENT";
-    });
-    setAttendanceMap(map);
-  };
-
-  const toggleAttendance = (studentId, status) => {
-    setAttendanceMap((prev) => ({ ...prev, [studentId]: status }));
-  };
-
-  const submitAttendance = async (e) => {
-    e.preventDefault();
+  const handleLogout = () => { logout(); navigate("/login"); };
+  const handleAcknowledgeAlert = async (alertId) => {
     try {
-      await api.post("/attendance", {
-        classGrade: selectedClass || null,
-        section: selectedSection || null,
-        records: attendanceMap
-      });
-      setMessage({ type: "success", text: "Attendance saved." });
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: "error", text: "Failed to save attendance." });
-    }
+      await api.patch(`/alerts/${alertId}/acknowledge`);
+      setAlerts(prev => prev.filter(a => a.id !== alertId));
+    } catch { /* silent */ }
   };
 
-  /* ---------- Grades Upload ---------- */
-  const updateGrade = (studentId, value) => {
-    setGradesMap((p) => ({ ...p, [studentId]: value }));
-  };
+  const highRiskStudents = students.filter(s => s.riskLevel === "HIGH");
 
-  const submitGrades = async (e) => {
-    e.preventDefault();
-    try {
-      // payload example { classGrade, section, records: {studentId: marks} }
-      await api.post("/grade", {
-        classGrade: selectedClass || null,
-        section: selectedSection || null,
-        records: gradesMap
-      });
-      setMessage({ type: "success", text: "Grades uploaded." });
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: "error", text: "Failed to upload grades." });
-    }
-  };
-
-  /* ---------- Create Assignment ---------- */
-  const handleAssignmentFile = (file) => setAssignmentFile(file);
-
-  const submitAssignment = async (e) => {
-    e.preventDefault();
-    if (!newAssignment.title || !newAssignment.classGrade || !newAssignment.section || !newAssignment.dueDate) {
-      setMessage({ type: "error", text: "Please fill title, class, section, due date." });
-      return;
-    }
-
-    setCreatingAssignment(true);
-    try {
-      const form = new FormData();
-      form.append("title", newAssignment.title);
-      form.append("description", newAssignment.description);
-      form.append("classGrade", newAssignment.classGrade);
-      form.append("section", newAssignment.section);
-      form.append("dueDate", newAssignment.dueDate);
-      form.append("createdBy", user?.fullName || user?.name || "Teacher");
-      if (assignmentFile) form.append("attachment", assignmentFile);
-
-      const res = await api.post("/assignments", form, {
-        headers: { "Content-Type": "multipart/form-data" }
-      });
-
-      const created = res?.data?.data;
-      if (created) {
-        setAssignments((p) => [created, ...p]);
-        setNewAssignment({ title: "", description: "", classGrade: "", section: "", dueDate: "" });
-        setAssignmentFile(null);
-        setMessage({ type: "success", text: "Assignment created." });
-      } else {
-        setMessage({ type: "error", text: "Assignment created but no data returned." });
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: "error", text: "Failed to create assignment." });
-    } finally {
-      setCreatingAssignment(false);
-    }
-  };
-
-  /* ---------- View Submissions & Grade ---------- */
-  const openSubmissions = async (assignment) => {
-    setSelectedAssignment(assignment);
-    setLoadingSubmissions(true);
-    try {
-      const res = await api.get(`/assignments/${assignment._id}/submissions`).catch(() => ({ data: { data: [] } }));
-      setSubmissions(res?.data?.data || []);
-      // initialize drafts
-      const drafts = {};
-      (res?.data?.data || []).forEach((s) => {
-        drafts[s._id] = { marks: s.marks ?? "", feedback: s.feedback ?? "" };
-      });
-      setGradingDrafts(drafts);
-      setTab("submissions");
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: "error", text: "Failed to load submissions." });
-    } finally {
-      setLoadingSubmissions(false);
-    }
-  };
-
-  const gradeSubmission = async (submissionId) => {
-    const draft = gradingDrafts[submissionId];
-    if (!draft) return;
-    try {
-      await api.put(`/assignments/${selectedAssignment._id}/submissions/${submissionId}/grade`, {
-        marks: draft.marks !== "" ? Number(draft.marks) : null,
-        feedback: draft.feedback,
-        gradedBy: user?.fullName || user?.name || "Teacher"
-      }).catch(() => null);
-
-      // refresh submissions
-      const res = await api.get(`/assignments/${selectedAssignment._id}/submissions`).catch(() => ({ data: { data: [] } }));
-      setSubmissions(res?.data?.data || []);
-      setMessage({ type: "success", text: "Saved grading." });
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: "error", text: "Failed to save grading." });
-    }
-  };
-
-  /* ---------- UI helpers ---------- */
-  useEffect(() => {
-    if (message) {
-      const t = setTimeout(() => setMessage(null), 4000);
-      return () => clearTimeout(t);
-    }
-  }, [message]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-lg text-gray-600">Loading dashboard...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-100">
-      {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-r from-green-600 to-blue-600 p-2 rounded-lg">
-              <BookOpen className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">VidyaVriksh</h1>
-              <p className="text-sm text-gray-600">Teacher Portal</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-gray-700">Welcome, <strong>{user?.fullName || user?.name || "Teacher"}</strong></div>
-            <button onClick={logout} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 flex items-center gap-2">
-              <LogOut className="w-4 h-4" /> Logout
-            </button>
+  // ── Sidebar ──────────────────────────────────────────────────────────────────
+  const Sidebar = () => (
+    <aside className={`${sidebarOpen ? "w-64" : "w-0 overflow-hidden"} transition-all duration-300 bg-gradient-to-b from-blue-800 to-indigo-900 min-h-screen flex flex-col shrink-0`}>
+      {/* Logo */}
+      <div className="p-6 border-b border-blue-700">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">🌳</span>
+          <div>
+            <p className="text-white font-bold text-lg leading-tight">VidyaVriksh</p>
+            <p className="text-blue-300 text-xs">Teacher Portal</p>
           </div>
         </div>
       </div>
 
-      {/* Body */}
-      <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
-        {/* Sidebar */}
-        <aside className="bg-white p-4 rounded-2xl shadow">
-          <nav className="space-y-2">
-            <SidebarButton icon={<Users className="w-5 h-5" />} text="Students" active={tab==="students"} onClick={() => setTab("students")} />
-            <SidebarButton icon={<Calendar className="w-5 h-5" />} text="Attendance" active={tab==="attendance"} onClick={() => { setTab("attendance"); initAttendanceForFiltered(); }} />
-            <SidebarButton icon={<Award className="w-5 h-5" />} text="Grades" active={tab==="grades"} onClick={() => setTab("grades")} />
-            <SidebarButton icon={<FilePlus className="w-5 h-5" />} text="Create Assignment" active={tab==="create"} onClick={() => setTab("create")} />
-            <SidebarButton icon={<Eye className="w-5 h-5" />} text="Assignments & Submissions" active={tab==="assignments" || tab==="submissions"} onClick={() => setTab("assignments")} />
-          </nav>
-
-          {/* small filters */}
-          <div className="mt-6 border-t pt-4">
-            <div className="text-xs font-semibold text-gray-600 mb-2">Filters</div>
-            <div className="space-y-2">
-              <div>
-                <label className="text-xs text-gray-500">Class</label>
-                <input value={selectedClass} onChange={(e)=>setSelectedClass(e.target.value)} placeholder="e.g., 10" className="w-full px-2 py-1 border rounded mt-1 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Section</label>
-                <input value={selectedSection} onChange={(e)=>setSelectedSection(e.target.value)} placeholder="e.g., A" className="w-full px-2 py-1 border rounded mt-1 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Search</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Name or ID" className="flex-1 px-2 py-1 border rounded text-sm" />
-                  <button onClick={()=>{ setSearch(""); setSelectedClass(""); setSelectedSection(""); }} className="px-2 py-1 bg-gray-100 rounded text-sm">Clear</button>
-                </div>
-              </div>
+      {/* Teacher info */}
+      {teacher && (
+        <div className="p-4 border-b border-blue-700 bg-blue-700/30">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white text-blue-800 font-bold flex items-center justify-center text-sm">
+              {teacher.name?.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-white font-semibold text-sm truncate">{teacher.name}</p>
+              <p className="text-blue-300 text-xs">Class {teacher.assignedClass}-{teacher.section}</p>
+              <p className="text-blue-300 text-xs truncate">{teacher.subject}</p>
             </div>
           </div>
-        </aside>
+        </div>
+      )}
 
-        {/* Main Content */}
-        <main>
-          {/* message */}
-          {message && (
-            <div className={`mb-4 p-3 rounded ${message.type === "success" ? "bg-green-100 text-green-800" : "bg-red-50 text-red-800"}`}>
-              {message.text}
+      {/* Nav */}
+      <nav className="flex-1 p-4 space-y-1">
+        {TABS.map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setActiveTab(id)}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+              activeTab === id
+                ? "bg-white text-blue-800 shadow"
+                : "text-blue-200 hover:bg-blue-700/50 hover:text-white"
+            }`}>
+            <Icon className="w-5 h-5 shrink-0" />
+            {label}
+            {id === "alerts" && alerts.length > 0 && (
+              <span className="ml-auto bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{alerts.length}</span>
+            )}
+            {id === "risk" && highRiskStudents.length > 0 && (
+              <span className="ml-auto bg-orange-500 text-white text-xs rounded-full px-2 py-0.5">{highRiskStudents.length}</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* Logout */}
+      <div className="p-4">
+        <button onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-300 hover:bg-red-900/30 hover:text-red-200 transition text-sm font-semibold">
+          <LogOut className="w-5 h-5" /> Logout
+        </button>
+      </div>
+    </aside>
+  );
+
+  // ── Tab content ──────────────────────────────────────────────────────────────
+  const renderContent = () => {
+    if (loading) return (
+      <div className="flex flex-col items-center justify-center h-80 gap-4">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+        <p className="text-gray-500 font-medium">Loading dashboard...</p>
+      </div>
+    );
+
+    if (error) return (
+      <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-8 text-center">
+        <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+        <p className="text-red-700 font-semibold text-lg mb-2">Failed to load data</p>
+        <p className="text-red-600 text-sm mb-4">{error}</p>
+        <button onClick={fetchData} className="px-6 py-2 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition">
+          Retry
+        </button>
+      </div>
+    );
+
+    switch (activeTab) {
+      case "home": return (
+        <div className="space-y-6">
+          {/* Welcome banner */}
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl p-8">
+            <h1 className="text-3xl font-bold mb-1">Welcome back, {teacher?.name?.split(" ")[0] || user?.name}! 👋</h1>
+            <p className="text-blue-100">Class {teacher?.assignedClass}-{teacher?.section} · {teacher?.subject}</p>
+          </div>
+          <QuickStats stats={stats} />
+          {highRiskStudents.length > 0 && (
+            <div className="bg-red-50 border-l-4 border-red-500 rounded-r-xl p-4">
+              <p className="font-bold text-red-700 mb-1">⚠️ {highRiskStudents.length} student(s) at HIGH dropout risk</p>
+              <p className="text-red-600 text-sm">Go to Risk Monitor tab for details.</p>
+              <button onClick={() => setActiveTab("risk")} className="mt-2 text-red-700 underline text-sm font-semibold">View Now →</button>
             </div>
           )}
+          <StudentList students={students.slice(0, 5)} onSelectStudent={() => setActiveTab("students")} />
+        </div>
+      );
 
-          {/* Students Tab */}
-          {tab === "students" && (
-            <section className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl shadow flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-800">Students ({filteredStudents.length})</h2>
-                  <p className="text-sm text-gray-500">All students matching filters</p>
-                </div>
-                <div className="text-sm text-gray-600">Tip: Click an assignment &gt; "Submissions" to grade</div>
-              </div>
+      case "students": return (
+        <StudentList students={students} onSelectStudent={() => {}} />
+      );
 
-              <div className="grid gap-3">
-                {filteredStudents.map((s) => (
-                  <div key={s._id || s.studentId} className="bg-white p-4 rounded-lg shadow flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold text-gray-800">{s.user?.fullName || "Unknown"}</div>
-                      <div className="text-xs text-gray-500">ID: {s.studentId} • Class {s.classGrade || "-"}-{s.section || "-"}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-sm text-gray-600">{s.currentGPA ? `GPA: ${Number(s.currentGPA).toFixed(2)}` : "GPA: N/A"}</div>
-                    </div>
-                  </div>
-                ))}
-                {filteredStudents.length === 0 && <div className="bg-white p-6 rounded-lg shadow text-center text-gray-500">No students found.</div>}
-              </div>
-            </section>
-          )}
+      case "attendance": return (
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <CheckSquare className="w-7 h-7 text-blue-600" /> Mark Attendance
+          </h2>
+          {teacher ? (
+            <AttendanceForm
+              teacherId={profileId}
+              classGrade={teacher.assignedClass}
+              section={teacher.section}
+              onSuccess={fetchData}
+            />
+          ) : <p className="text-gray-500">Loading teacher info...</p>}
+        </div>
+      );
 
-          {/* Attendance Tab */}
-          {tab === "attendance" && (
-            <section className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl shadow">
-                <h2 className="text-xl font-semibold">Mark Attendance</h2>
-                <p className="text-sm text-gray-500">Select Present/Absent for each student (filters applied).</p>
-              </div>
+      case "assignments": return (
+        <div className="space-y-6">
+          <CreateAssignment teacherId={profileId} classGrade={teacher?.assignedClass} section={teacher?.section} />
+          <TeacherAssignments teacherId={profileId} students={students} />
+        </div>
+      );
 
-              <form onSubmit={submitAttendance} className="space-y-3">
-                <div className="grid gap-3">
-                  {filteredStudents.map((s) => (
-                    <div key={s.studentId} className="bg-white p-3 rounded-lg shadow flex justify-between items-center">
-                      <div>
-                        <div className="font-semibold">{s.user?.fullName}</div>
-                        <div className="text-xs text-gray-500">ID: {s.studentId}</div>
-                      </div>
+      case "grades": return (
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <Award className="w-7 h-7 text-purple-600" /> Enter Grades
+          </h2>
+          {teacher ? (
+            <GradeForm
+              teacherId={profileId}
+              classGrade={teacher.assignedClass}
+              section={teacher.assignedSection}
+              onSuccess={fetchData}
+            />
+          ) : <p className="text-gray-500">Loading...</p>}
+        </div>
+      );
 
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => toggleAttendance(s.studentId, "PRESENT")} className={`px-3 py-1 rounded ${attendanceMap[s.studentId] === "PRESENT" ? "bg-green-100 text-green-800" : "bg-gray-100"}`}>Present</button>
-                        <button type="button" onClick={() => toggleAttendance(s.studentId, "ABSENT")} className={`px-3 py-1 rounded ${attendanceMap[s.studentId] === "ABSENT" ? "bg-red-100 text-red-800" : "bg-gray-100"}`}>Absent</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+      case "risk": return (
+        <HighRiskStudents students={students} />
+      );
 
-                <div className="flex gap-3 mt-3">
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Submit Attendance</button>
-                  <button type="button" onClick={() => { initAttendanceForFiltered(); setMessage({ type: "success", text: "Reset attendance to PRESENT" }); }} className="px-4 py-2 bg-gray-100 rounded-lg">Reset</button>
-                </div>
-              </form>
-            </section>
-          )}
+      case "alerts": return (
+        <AlertPanel alerts={alerts} onAcknowledge={handleAcknowledgeAlert} />
+      );
 
-          {/* Grades Tab */}
-          {tab === "grades" && (
-            <section className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl shadow">
-                <h2 className="text-xl font-semibold">Upload Grades</h2>
-                <p className="text-sm text-gray-500">Enter marks for students (applies to filtered class/section).</p>
-              </div>
+      default: return null;
+    }
+  };
 
-              <form onSubmit={submitGrades} className="space-y-3">
-                <div className="grid gap-3">
-                  {filteredStudents.map((s) => (
-                    <div key={s.studentId} className="bg-white p-3 rounded-lg shadow flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold">{s.user?.fullName}</div>
-                        <div className="text-xs text-gray-500">ID: {s.studentId}</div>
-                      </div>
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar />
 
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        placeholder="Marks"
-                        value={gradesMap[s.studentId] ?? ""}
-                        onChange={(e) => updateGrade(s.studentId, e.target.value)}
-                        className="w-28 px-3 py-2 border rounded"
-                      />
-                    </div>
-                  ))}
-                </div>
+      {/* Main */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
+          <button onClick={() => setSidebarOpen(p => !p)} className="text-gray-500 hover:text-gray-700">
+            {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+          <h2 className="text-lg font-bold text-gray-800 capitalize">
+            {TABS.find(t => t.id === activeTab)?.label}
+          </h2>
+          <div className="ml-auto flex items-center gap-3">
+            {alerts.length > 0 && (
+              <button onClick={() => setActiveTab("alerts")} className="relative">
+                <Bell className="w-6 h-6 text-gray-500" />
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{alerts.length}</span>
+              </button>
+            )}
+            <span className="text-sm text-gray-600 font-medium">{user?.name}</span>
+          </div>
+        </header>
 
-                <div className="flex gap-3 mt-3">
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg">Upload Grades</button>
-                </div>
-              </form>
-            </section>
-          )}
-
-          {/* Create Assignment Tab */}
-          {tab === "create" && (
-            <section className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl shadow">
-                <h2 className="text-xl font-semibold">Create Assignment</h2>
-                <p className="text-sm text-gray-500">Assign to a class & section; optional file attachment.</p>
-              </div>
-
-              <form onSubmit={submitAssignment} className="bg-white p-6 rounded-2xl shadow space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <input placeholder="Title" value={newAssignment.title} onChange={(e)=>setNewAssignment({...newAssignment, title:e.target.value})} className="p-3 border rounded" required />
-                  <input type="date" value={newAssignment.dueDate} onChange={(e)=>setNewAssignment({...newAssignment, dueDate:e.target.value})} className="p-3 border rounded" required />
-                  <input placeholder="Class (e.g., 10)" value={newAssignment.classGrade} onChange={(e)=>setNewAssignment({...newAssignment, classGrade:e.target.value})} className="p-3 border rounded" required />
-                  <input placeholder="Section (e.g., A)" value={newAssignment.section} onChange={(e)=>setNewAssignment({...newAssignment, section:e.target.value})} className="p-3 border rounded" required />
-                </div>
-
-                <textarea placeholder="Description / instructions" value={newAssignment.description} onChange={(e)=>setNewAssignment({...newAssignment, description:e.target.value})} className="w-full p-3 border rounded" rows={4}></textarea>
-
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded cursor-pointer">
-                    <Paperclip className="w-4 h-4" />
-                    <span className="text-sm">Attach file</span>
-                    <input type="file" onChange={(e)=>handleAssignmentFile(e.target.files?.[0] || null)} className="hidden" />
-                  </label>
-
-                  <div className="flex-1 text-sm text-gray-600">{assignmentFile ? assignmentFile.name : "No file attached"}</div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button type="submit" className="px-4 py-2 bg-purple-600 text-white rounded-lg" disabled={creatingAssignment}>
-                    {creatingAssignment ? "Creating..." : "Create Assignment"}
-                  </button>
-                  <button type="button" onClick={()=> setNewAssignment({ title:"", description:"", classGrade:"", section:"", dueDate:"" })} className="px-4 py-2 bg-gray-100 rounded-lg">Clear</button>
-                </div>
-              </form>
-            </section>
-          )}
-
-          {/* Assignments list -> open submissions */}
-          {tab === "assignments" && (
-            <section className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl shadow flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Assignments</h2>
-                <div className="text-sm text-gray-500">Click "Submissions" to view and grade.</div>
-              </div>
-
-              <div className="grid gap-3">
-                {assignments.length === 0 && <div className="bg-white p-6 rounded shadow text-gray-500">No assignments yet.</div>}
-                {assignments.map((a) => (
-                  <div key={a._id} className="bg-white p-4 rounded-lg shadow flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold">{a.title}</div>
-                      <div className="text-xs text-gray-500">Class {a.classGrade}-{a.section} • Due: {new Date(a.dueDate).toLocaleDateString()}</div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {a.attachmentUrl && <button onClick={()=> window.open(a.attachmentUrl, "_blank")} className="px-3 py-1 bg-gray-100 rounded">View File</button>}
-                      <button onClick={() => openSubmissions(a)} className="px-3 py-1 bg-indigo-600 text-white rounded flex items-center gap-2"><Eye className="w-4 h-4" />Submissions</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Submissions tab */}
-          {tab === "submissions" && selectedAssignment && (
-            <section className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl shadow flex justify-between items-start">
-                <div>
-                  <h2 className="text-xl font-semibold">{selectedAssignment.title}</h2>
-                  <p className="text-sm text-gray-600">{selectedAssignment.description}</p>
-                  <div className="text-xs text-gray-500 mt-1">Class {selectedAssignment.classGrade}-{selectedAssignment.section} • Due {new Date(selectedAssignment.dueDate).toLocaleDateString()}</div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button onClick={() => { setSelectedAssignment(null); setSubmissions([]); setTab("assignments"); }} className="px-3 py-1 bg-gray-100 rounded">Back</button>
-                </div>
-              </div>
-
-              {loadingSubmissions ? <div className="text-gray-600">Loading submissions...</div> : (
-                <div className="space-y-3">
-                  {submissions.length === 0 && <div className="bg-white p-6 rounded shadow text-gray-500">No submissions yet.</div>}
-                  {submissions.map((s) => (
-                    <div key={s._id} className="bg-white p-4 rounded-lg shadow flex flex-col md:flex-row justify-between gap-4">
-                      <div>
-                        <div className="font-semibold">{s.studentName || s.studentId}</div>
-                        <div className="text-xs text-gray-500">{s.submittedAt ? new Date(s.submittedAt).toLocaleString() : "—"}</div>
-
-                        {s.textSubmission && <p className="mt-2 text-gray-700">{s.textSubmission}</p>}
-                        {s.attachmentUrl && <p className="mt-2"><button onClick={()=> window.open(s.attachmentUrl, "_blank")} className="text-blue-600 hover:underline">Download attachment</button></p>}
-
-                        {s.feedback && <div className="mt-2 p-2 bg-gray-50 rounded text-sm"><strong>Feedback:</strong> {s.feedback}</div>}
-                      </div>
-
-                      <div className="w-full md:w-80">
-                        <label className="text-xs text-gray-500">Marks</label>
-                        <input type="number" min="0" value={gradingDrafts[s._id]?.marks ?? ""} onChange={(e) => setGradingDrafts(p => ({...p, [s._id]: {...(p[s._id]||{}), marks: e.target.value}}))} className="w-full p-2 border rounded mb-2" />
-
-                        <label className="text-xs text-gray-500">Feedback</label>
-                        <textarea value={gradingDrafts[s._id]?.feedback ?? ""} onChange={(e) => setGradingDrafts(p => ({...p, [s._id]: {...(p[s._id]||{}), feedback: e.target.value}}))} className="w-full p-2 border rounded mb-2" rows={3} />
-
-                        <div className="flex gap-2">
-                          <button onClick={() => gradeSubmission(s._id)} className="flex-1 px-3 py-2 bg-green-600 text-white rounded flex items-center justify-center gap-2"><Check className="w-4 h-4" /> Save Grade</button>
-                          <button onClick={() => { setGradingDrafts(p => ({...p, [s._id]: {marks: "", feedback: ""}})); }} className="px-3 py-2 bg-gray-100 rounded">Clear</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
+        {/* Content */}
+        <main className="flex-1 p-6 overflow-auto">
+          {renderContent()}
         </main>
       </div>
     </div>
   );
 };
-
-/* ----------------- small helper components ----------------- */
-const SidebarButton = ({ icon, text, active, onClick }) => (
-  <button onClick={onClick} className={`flex items-center gap-3 w-full px-3 py-2 rounded ${active ? "bg-indigo-50 font-semibold" : "hover:bg-gray-50"}`}>
-    <div className="text-indigo-600">{icon}</div>
-    <div className="text-sm">{text}</div>
-  </button>
-);
 
 export default TeacherDashboard;

@@ -2,40 +2,25 @@ package com.vidyavriksh.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class RegisterRequest {
-    @NotBlank(message = "Username is required")
-    @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
-    private String username;
-    
-    @NotBlank(message = "Email is required")
-    @Email(message = "Email should be valid")
+    @NotBlank
+    private String name;
+    @NotBlank @Email
     private String email;
-    
-    @NotBlank(message = "Full name is required")
-    private String fullName;
-    
-    @NotBlank(message = "Password is required")
-    @Size(min = 6, message = "Password must be at least 6 characters")
+    @NotBlank
     private String password;
-    
+    private String role;       // "TEACHER", "STUDENT", "PARENT", "ADMIN"
     private String phone;
-    
-    @NotBlank(message = "Role is required")
-    private String role; // STUDENT, TEACHER, ADMIN, PARENT
-    
-    // Student-specific fields
-    private String guardianName;
-    private String guardianPhone;
-    private String guardianEmail;
-    private String classGrade;
-    private String section;
-    
-    // Teacher-specific fields
-    private String department;
+    // Teacher fields
     private String subject;
-    private Integer yearsOfExperience;
+    private String assignedClass;
+    private String section;
+    // Student fields
+    private String classGrade;
+    private String studentSection;
+    private Integer rollNo;
+    private String parentId;
 }

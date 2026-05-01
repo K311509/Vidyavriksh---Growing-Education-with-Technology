@@ -4,18 +4,18 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import java.time.LocalDate;
+import java.util.Map;
 
 @Data
 public class AttendanceRequest {
-    @NotBlank(message = "Student ID is required")
+    // Used by original AttendanceService (per-student)
     private String studentId;
-    
-    @NotNull(message = "Date is required")
     private LocalDate date;
-    
-    @NotBlank(message = "Status is required")
-    private String status; // PRESENT, ABSENT, LATE, EXCUSED
-    
+    private String status;
     private String remarks;
     private String subject;
+
+    // Used by TeacherService (bulk class attendance)
+    private String teacherId;
+    private Map<String, String> records;  // studentId → present/absent/late
 }

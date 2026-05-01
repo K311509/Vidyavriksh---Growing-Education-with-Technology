@@ -1,20 +1,20 @@
 package com.vidyavriksh.dto;
 
-import com.vidyavriksh.model.Role;
-import lombok.Builder;
 import lombok.Data;
-import java.util.Set;
 
 @Data
-@Builder
 public class AuthResponse {
     private String token;
+    private String userId;
+    private String role;
+    private String name;
+    private String profileId;
 
-    @Builder.Default
-    private String type = "Bearer";
-    private String id;
-    private String username;
-    private String email;
-    private String fullName;
-    private Set<Role> roles;
+    public AuthResponse(String token, String userId, String role, String name, String profileId) {
+        this.token     = token;
+        this.userId    = userId;
+        this.role      = role;
+        this.name      = name;
+        this.profileId = profileId;
+    }
 }

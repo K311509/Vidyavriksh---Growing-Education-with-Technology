@@ -4,7 +4,9 @@ import com.vidyavriksh.dto.GradeRequest;
 import com.vidyavriksh.dto.GradeResponse;
 import com.vidyavriksh.model.Grade;
 import com.vidyavriksh.model.Student;
+import com.vidyavriksh.model.User;
 import com.vidyavriksh.repository.GradeRepository;
+import com.vidyavriksh.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,54 +21,55 @@ import java.util.stream.Collectors;
 public class GradeService {
 
     private final GradeRepository gradeRepository;
-    private final StudentService studentService;
+    private final StudentService  studentService;
+    private final UserRepository  userRepository;
 
     @Transactional
     public GradeResponse addGrade(GradeRequest request) {
         Student student = studentService.getStudentById(request.getStudentId());
-        
+
         Grade grade = new Grade();
-        grade.setStudent(student);
+        // Grade model uses plain String studentId — NOT @DBRef Student
+        grade.setStudentId(student.getId());
         grade.setSubject(request.getSubject());
         grade.setExamType(request.getExamType());
         grade.setScore(request.getScore());
         grade.setMaxScore(request.getMaxScore());
-        
-        // Calculate percentage and grade
-        double percentage = (request.getScore() / request.getMaxScore()) * 100;
+
+        double percentage = request.getMaxScore() > 0
+             ? (request.getScore() / request.getMaxScore()) * 100
+                                       : 0;
         grade.setPercentage(percentage);
         grade.setGrade(calculateGrade(percentage));
-        
-        grade.setSemester(request.getSemester());
-        grade.setAcademicYear(request.getAcademicYear());
         grade.setExamDate(request.getExamDate());
-        
+
         grade = gradeRepository.save(grade);
-        log.info("Grade added for student: {} in {}", student.getStudentId(), request.getSubject());
-        
+
+        log.info("Grade added for student: {} in {}", student.getId(), request.getSubject());
+
         // Update student GPA
         studentService.updateGPA(request.getStudentId());
-        
-        // Award points for good grades
+
+        // Award gamification points for good grades
         if (percentage >= 90) {
             studentService.addGamificationPoints(request.getStudentId(), 50);
         } else if (percentage >= 80) {
             studentService.addGamificationPoints(request.getStudentId(), 30);
         }
-        
+
         return mapToResponse(grade);
     }
 
     public List<GradeResponse> getStudentGrades(String studentId) {
-        List<Grade> grades = gradeRepository.findByStudentId(studentId);
-        return grades.stream()
+        return gradeRepository.findByStudentIdOrderByExamDateDesc(studentId)
+                .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
     public List<GradeResponse> getGradesBySubject(String studentId, String subject) {
-        List<Grade> grades = gradeRepository.findByStudentIdAndSubject(studentId, subject);
-        return grades.stream()
+        return gradeRepository.findByStudentIdAndSubject(studentId, subject)
+                .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -82,18 +85,24 @@ public class GradeService {
     }
 
     private GradeResponse mapToResponse(Grade grade) {
+        // Grade uses studentId String, not @DBRef — fetch student separately
+        Student student = studentService.getStudentById(grade.getStudentId());
+
+        User user = null;
+        if (student.getUserId() != null) {
+            user = userRepository.findById(student.getUserId()).orElse(null);
+        }
+
         GradeResponse response = new GradeResponse();
         response.setId(grade.getId());
-        response.setStudentId(grade.getStudent().getId());
-        response.setStudentName(grade.getStudent().getUser().getFullName());
+        response.setStudentId(grade.getStudentId());
+        response.setStudentName(user != null ? user.getFullName() : "Unknown");
         response.setSubject(grade.getSubject());
         response.setExamType(grade.getExamType());
         response.setScore(grade.getScore());
         response.setMaxScore(grade.getMaxScore());
         response.setPercentage(grade.getPercentage());
         response.setGrade(grade.getGrade());
-        response.setSemester(grade.getSemester());
-        response.setAcademicYear(grade.getAcademicYear());
         response.setExamDate(grade.getExamDate());
         return response;
     }

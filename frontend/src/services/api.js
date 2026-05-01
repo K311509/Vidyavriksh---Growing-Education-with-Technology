@@ -1,46 +1,38 @@
-import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8080/api';
-const ML_BASE_URL = 'http://localhost:5000';
+import axios from "axios";
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: "http://localhost:8080/api",
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
-// Add token to requests
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+// Attach token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
-// Handle response errors
+// Global stale session handler
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      globalThis.location.href = '/login';
+    const status = error.response?.status;
+    const isAuthEndpoint = error.config?.url?.includes("/auth/");
+
+    if ((status === 401 || status === 403) && !isAuthEndpoint) {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.href = "/login";
     }
+
     return Promise.reject(error);
   }
-);
 
-// ML Service API
-export const mlApi = axios.create({
-  baseURL: ML_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+
+);
 
 export default api;

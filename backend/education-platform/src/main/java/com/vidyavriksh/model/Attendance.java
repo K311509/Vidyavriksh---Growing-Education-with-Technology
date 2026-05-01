@@ -15,11 +15,15 @@ public class Attendance {
     
     @DBRef
     private Student student;
+
+    private String teacherId;
     
     private LocalDate date;
     private String status; // PRESENT, ABSENT, LATE, EXCUSED
     private String remarks;
     private String subject;
+    private String classgrade;
+    private String section;
     
     private LocalDateTime createdAt = LocalDateTime.now();
 }

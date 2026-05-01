@@ -1,177 +1,133 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
-import { BookOpen, ClipboardList, CalendarCheck, Award, LogOut } from "lucide-react";
+import { Home, Calendar, Award, BookOpen, TrendingUp, LogOut, Menu, X, Bell } from "lucide-react";
+
+import StudentHome        from "../components/student/StudentHome";
+import StudentAttendance  from "../components/student/StudentAttendance";
+import StudentGrades      from "../components/student/StudentGrades";
+import StudentAssignments from "../components/student/StudentAssignments";
+import StudentRisk        from "../components/student/StudentRisk";
+
+const TABS = [
+  { id:"home",        label:"Overview",    icon:Home       },
+  { id:"attendance",  label:"Attendance",  icon:Calendar   },
+  { id:"grades",      label:"Grades",      icon:Award      },
+  { id:"assignments", label:"Assignments", icon:BookOpen   },
+  { id:"risk",        label:"My Risk",     icon:TrendingUp },
+];
 
 const StudentDashboard = () => {
-  const { user, logout } = useAuth();
+  const { user, profileId, logout } = useAuth();
+  const navigate = useNavigate();
+  const [activeTab,   setActiveTab]   = useState("home");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [student,     setStudent]     = useState(null);
+  const [dashData,    setDashData]    = useState(null);
+  const [risk,        setRisk]        = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState("");
 
-  const [grades, setGrades] = useState([]);
-  const [assignments, setAssignments] = useState([]);
-  const [attendance, setAttendance] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const fetchData = useCallback(async()=>{
+    if(!profileId) return;
+    setLoading(true); setError("");
+    try{
+      const [studentRes, dashRes] = await Promise.all([
+        api.get(`/student/${profileId}`),
+        api.get(`/student/${profileId}/dashboard`),
+      ]);
+      setStudent(studentRes.data);
+      setDashData(dashRes.data);
+      // Fetch risk prediction separately
+      try{ const r=await api.get(`/student/${profileId}/risk`); setRisk(r.data); }
+      catch{ setRisk(null); }
+    }catch(err){ setError(err.response?.data?.error||"Failed to load dashboard."); }
+    finally{ setLoading(false); }
+  },[profileId]);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  useEffect(()=>{ fetchData(); },[fetchData]);
 
-  const fetchDashboardData = async () => {
-    try {
-      const studentId = user.studentId;
+  const handleLogout=()=>{ logout(); navigate("/login"); };
 
-      // Fetch grades
-      const gradeResponse = await api.get(`/grades/student/${studentId}`);
-      setGrades(gradeResponse.data.data || []);
+  const Sidebar=()=>(
+    <aside className={`${sidebarOpen?"w-64":"w-0 overflow-hidden"} transition-all duration-300 bg-gradient-to-b from-green-700 to-teal-800 min-h-screen flex flex-col shrink-0`}>
+      <div className="p-6 border-b border-green-600">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">🌳</span>
+          <div><p className="text-white font-bold text-lg leading-tight">VidyaVriksh</p><p className="text-green-300 text-xs">Student Portal</p></div>
+        </div>
+      </div>
+      {student&&(
+        <div className="p-4 border-b border-green-600 bg-green-600/30">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white text-green-800 font-bold flex items-center justify-center text-sm">
+              {student.name?.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-white font-semibold text-sm truncate">{student.name}</p>
+              <p className="text-green-300 text-xs">Class {student.classGrade}-{student.section}</p>
+              <p className="text-green-300 text-xs">Roll #{student.rollNo}</p>
+            </div>
+          </div>
+        </div>
+      )}
+      <nav className="flex-1 p-4 space-y-1">
+        {TABS.map(({id,label,icon:Icon})=>(
+          <button key={id} onClick={()=>setActiveTab(id)}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+              activeTab===id?"bg-white text-green-800 shadow":"text-green-200 hover:bg-green-600/50 hover:text-white"}`}>
+            <Icon className="w-5 h-5 shrink-0"/>{label}
+          </button>
+        ))}
+      </nav>
+      <div className="p-4">
+        <button onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-300 hover:bg-red-900/30 hover:text-red-200 transition text-sm font-semibold">
+          <LogOut className="w-5 h-5"/> Logout
+        </button>
+      </div>
+    </aside>
+  );
 
-      // Fetch assignments
-      const assignmentResponse = await api.get(`/assignments/student/${studentId}`);
-      setAssignments(assignmentResponse.data.data || []);
-
-      // Attendance
-      const attendanceResponse = await api.get(`/attendance/student/${studentId}`);
-      setAttendance(attendanceResponse.data.data || null);
-    } catch (error) {
-      console.error("Dashboard Fetch Error:", error);
-    } finally {
-      setLoading(false);
+  const renderContent=()=>{
+    if(loading) return (
+      <div className="flex flex-col items-center justify-center h-80 gap-4">
+        <div className="w-12 h-12 border-4 border-green-200 border-t-green-600 rounded-full animate-spin"/>
+        <p className="text-gray-500 font-medium">Loading dashboard…</p>
+      </div>
+    );
+    if(error) return (
+      <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-8 text-center">
+        <p className="text-red-700 font-semibold text-lg mb-2">Failed to load</p>
+        <p className="text-red-500 text-sm mb-4">{error}</p>
+        <button onClick={fetchData} className="px-6 py-2 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition">Retry</button>
+      </div>
+    );
+    switch(activeTab){
+      case "home":        return <StudentHome student={student} dashData={dashData} risk={risk}/>;
+      case "attendance":  return <StudentAttendance studentId={profileId}/>;
+      case "grades":      return <StudentGrades studentId={profileId}/>;
+      case "assignments": return <StudentAssignments studentId={profileId}/>;
+      case "risk":        return <StudentRisk student={student} risk={risk}/>;
+      default: return null;
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-xl text-gray-600">
-        Loading Dashboard...
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      
-      {/* ---------------- HEADER ---------------- */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-lg">
-              <BookOpen className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">VidyaVriksh Portal</h1>
-              <p className="text-sm text-gray-500">Student Dashboard</p>
-            </div>
-          </div>
-
-          <button
-            onClick={logout}
-            className="px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition flex items-center gap-2"
-          >
-            <LogOut size={18} /> Logout
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar/>
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
+          <button onClick={()=>setSidebarOpen(p=>!p)} className="text-gray-500 hover:text-gray-700">
+            {sidebarOpen?<X className="w-6 h-6"/>:<Menu className="w-6 h-6"/>}
           </button>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto p-6">
-        
-        {/* ---------------- WELCOME ---------------- */}
-        <div className="bg-white rounded-2xl shadow p-6 mb-8">
-          <h2 className="text-3xl font-bold text-gray-800">
-            Welcome, {user?.fullName}! 👋
-          </h2>
-          <p className="text-gray-600 mt-1">Here is your academic overview.</p>
-        </div>
-
-        {/* ---------------- RISK & ATTENDANCE BOXES ---------------- */}
-        <div className="grid md:grid-cols-2 gap-6">
-          
-          {/* Attendance */}
-          <div className="bg-white p-6 rounded-2xl shadow">
-            <div className="flex items-center gap-3 mb-3">
-              <CalendarCheck className="text-indigo-600" />
-              <h3 className="text-xl font-semibold text-gray-700">Attendance</h3>
-            </div>
-            {attendance ? (
-              <p className="text-gray-700 text-lg">
-                <span className="font-semibold">{attendance.percentage}%</span> attendance recorded
-              </p>
-            ) : (
-              <p className="text-gray-500">No attendance data available.</p>
-            )}
-          </div>
-
-          {/* Risk Level */}
-          <div className="bg-white p-6 rounded-2xl shadow">
-            <div className="flex items-center gap-3 mb-3">
-              <Award className="text-red-600" />
-              <h3 className="text-xl font-semibold text-gray-700">Dropout Risk Level</h3>
-            </div>
-            <p className="text-lg font-semibold text-gray-700">
-              {user?.riskLevel || "Not Evaluated"}
-            </p>
-          </div>
-
-        </div>
-
-        {/* ---------------- ASSIGNMENTS ---------------- */}
-        <div className="bg-white rounded-2xl shadow p-6 mt-8">
-          <div className="flex items-center gap-3 mb-4">
-            <ClipboardList className="text-green-600" />
-            <h2 className="text-2xl font-semibold text-gray-700">Your Assignments</h2>
-          </div>
-
-          {assignments.length === 0 ? (
-            <p className="text-gray-600">No assignments found.</p>
-          ) : (
-            <ul className="space-y-4">
-              {assignments.map((a) => (
-                <li
-                  key={a._id}
-                  className="p-4 rounded-lg border hover:bg-gray-50 transition"
-                >
-                  <p className="font-semibold text-gray-800">{a.title}</p>
-                  <p className="text-sm text-gray-600">
-                    Due: {new Date(a.dueDate).toLocaleDateString()}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* ---------------- GRADES (UPDATED ONLY THIS) ---------------- */}
-        <div className="bg-white shadow rounded-2xl p-6 mt-8">
-          <h2 className="text-2xl font-semibold text-gray-700 mb-4">Your Grades</h2>
-
-          {grades.length === 0 ? (
-            <p className="text-gray-600">No grades uploaded yet by teachers.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full rounded-lg overflow-hidden border">
-                <thead>
-                  <tr className="bg-gray-200 text-gray-700">
-                    <th className="p-3 text-left">Subject</th>
-                    <th className="p-3 text-left">Assignment</th>
-                    <th className="p-3 text-left">Grade</th>
-                    <th className="p-3 text-left">Teacher Remarks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {grades.map((g) => (
-                    <tr key={g._id} className="border-b hover:bg-gray-100">
-                      <td className="p-3">{g.subject}</td>
-                      <td className="p-3">{g.assignmentTitle}</td>
-                      <td className="p-3 font-bold text-blue-700">{g.grade}</td>
-                      <td className="p-3 text-gray-600">{g.remarks || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-      </main>
+          <h2 className="text-lg font-bold text-gray-800">{TABS.find(t=>t.id===activeTab)?.label}</h2>
+          <div className="ml-auto text-sm text-gray-600 font-medium">{user?.name}</div>
+        </header>
+        <main className="flex-1 p-6 overflow-auto">{renderContent()}</main>
+      </div>
     </div>
   );
 };
-
 export default StudentDashboard;

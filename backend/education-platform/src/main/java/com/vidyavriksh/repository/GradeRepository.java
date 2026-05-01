@@ -7,8 +7,8 @@ import java.util.List;
 
 @Repository
 public interface GradeRepository extends MongoRepository<Grade, String> {
-    List<Grade> findByStudentId(String studentId);
-    List<Grade> findByStudentIdAndSemester(String studentId, String semester);
+    List<Grade> findByStudentIdOrderByExamDateDesc(String studentId);
     List<Grade> findByStudentIdAndSubject(String studentId, String subject);
-    List<Grade> findBySubjectAndAcademicYear(String subject, String academicYear);
+    List<Grade> findByTeacherIdOrderByCreatedAtDesc(String teacherId);
+    List<Grade> findByClassGradeAndSection(String classGrade, String section);
 }

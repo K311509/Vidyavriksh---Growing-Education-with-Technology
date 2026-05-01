@@ -3,26 +3,20 @@ package com.vidyavriksh.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 @Data
 public class GradeRequest {
-    @NotBlank(message = "Student ID is required")
+    @NotBlank
     private String studentId;
-    
-    @NotBlank(message = "Subject is required")
+    @NotBlank
     private String subject;
-    
-    @NotBlank(message = "Exam type is required")
-    private String examType; // QUIZ, MIDTERM, FINAL, ASSIGNMENT
-    
-    @NotNull(message = "Score is required")
+    private String examType;
+    @NotNull
     private Double score;
-    
-    @NotNull(message = "Max score is required")
+    @NotNull
     private Double maxScore;
-    
     private String semester;
     private String academicYear;
-    private LocalDateTime examDate;
+    private LocalDate examDate;
 }

@@ -1,106 +1,76 @@
 package com.vidyavriksh.controller;
 
-import com.vidyavriksh.dto.*;
-import com.vidyavriksh.model.Student;
 import com.vidyavriksh.service.StudentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/student")
-@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class StudentController {
 
     private final StudentService studentService;
 
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STUDENT', 'TEACHER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Student>> getStudent(@PathVariable String id) {
-        Student student = studentService.getStudentById(id);
-        return ResponseEntity.ok(ApiResponse.success("Student retrieved successfully", student));
+    /** GET /api/student/{studentId} — student profile */
+    @GetMapping("/{studentId}")
+    public ResponseEntity<?> getStudent(@PathVariable String studentId) {
+        try { return ResponseEntity.ok(studentService.getStudentById(studentId)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
     }
 
+    /** GET /api/student/user/{userId} — get profile by userId (for login redirect) */
     @GetMapping("/user/{userId}")
-    @PreAuthorize("hasAnyRole('STUDENT', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Student>> getStudentByUserId(@PathVariable String userId) {
-        Student student = studentService.getStudentByUserId(userId);
-        return ResponseEntity.ok(ApiResponse.success("Student profile retrieved", student));
+    public ResponseEntity<?> getStudentByUserId(@PathVariable String userId) {
+        try { return ResponseEntity.ok(Map.of("data", studentService.getStudentByUserId(userId))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
     }
 
+    /** GET /api/student/{studentId}/dashboard — full dashboard data */
+    @GetMapping("/{studentId}/dashboard")
+    public ResponseEntity<?> getDashboard(@PathVariable String studentId) {
+        try { return ResponseEntity.ok(studentService.getDashboard(studentId)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    /** GET /api/student/{studentId}/risk — dropout risk prediction */
+    @GetMapping("/{studentId}/risk")
+    public ResponseEntity<?> getRisk(@PathVariable String studentId) {
+        try { return ResponseEntity.ok(studentService.getRiskPrediction(studentId)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    /** GET /api/student/{studentId}/grades */
+    @GetMapping("/{studentId}/grades")
+    public ResponseEntity<?> getGrades(@PathVariable String studentId) {
+        try { return ResponseEntity.ok(studentService.getGrades(studentId)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    /** GET /api/student/{studentId}/attendance */
+    @GetMapping("/{studentId}/attendance")
+    public ResponseEntity<?> getAttendance(@PathVariable String studentId) {
+        try { return ResponseEntity.ok(studentService.getAttendance(studentId)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    /** GET /api/student/{studentId}/assignments */
+    @GetMapping("/{studentId}/assignments")
+    public ResponseEntity<?> getAssignments(@PathVariable String studentId) {
+        try { return ResponseEntity.ok(studentService.getAssignments(studentId)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    /** GET /api/student — get all students (for admin/teacher/parent) */
     @GetMapping
-    @PreAuthorize("hasAnyRole('TEACHER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<List<Student>>> getAllStudents() {
-        List<Student> students = studentService.getAllStudents();
-        return ResponseEntity.ok(ApiResponse.success("Students retrieved successfully", students));
-    }
-
-    @GetMapping("/class/{classGrade}")
-    @PreAuthorize("hasAnyRole('TEACHER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<List<Student>>> getStudentsByClass(
-            @PathVariable String classGrade,
-            @RequestParam(required = false) String section) {
-        List<Student> students = studentService.getStudentsByClass(classGrade, section);
-        return ResponseEntity.ok(ApiResponse.success("Students retrieved successfully", students));
-    }
-
-    @GetMapping("/high-risk")
-    @PreAuthorize("hasAnyRole('TEACHER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<List<Student>>> getHighRiskStudents() {
-        List<Student> students = studentService.getHighRiskStudents();
-        return ResponseEntity.ok(ApiResponse.success("High-risk students retrieved", students));
-    }
-
-    @GetMapping("/low-attendance")
-    @PreAuthorize("hasAnyRole('TEACHER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<List<Student>>> getStudentsWithLowAttendance(
-            @RequestParam(defaultValue = "75.0") Double threshold) {
-        List<Student> students = studentService.getStudentsWithLowAttendance(threshold);
-        return ResponseEntity.ok(ApiResponse.success("Students with low attendance retrieved", students));
-    }
-
-    @GetMapping("/{id}/dashboard")
-    @PreAuthorize("hasAnyRole('STUDENT', 'ADMIN')")
-    public ResponseEntity<ApiResponse<StudentDashboardData>> getDashboard(@PathVariable String id) {
-        StudentDashboardData data = studentService.getDashboardData(id);
-        return ResponseEntity.ok(ApiResponse.success("Dashboard data retrieved", data));
-    }
-
-    @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STUDENT', 'ADMIN')")
-    public ResponseEntity<ApiResponse<Student>> updateStudent(
-            @PathVariable String id,
-            @RequestBody StudentUpdateRequest request) {
-        Student student = studentService.updateStudent(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Student updated successfully", student));
-    }
-
-    @PostMapping("/{id}/points")
-    @PreAuthorize("hasAnyRole('TEACHER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<String>> addPoints(
-            @PathVariable String id,
-            @RequestParam int points) {
-        studentService.addGamificationPoints(id, points);
-        return ResponseEntity.ok(ApiResponse.success("Points added successfully", null));
-    }
-
-    @PostMapping("/{id}/badge")
-    @PreAuthorize("hasAnyRole('TEACHER', 'ADMIN')")
-    public ResponseEntity<ApiResponse<String>> addBadge(
-            @PathVariable String id,
-            @RequestParam String badge) {
-        studentService.addBadge(id, badge);
-        return ResponseEntity.ok(ApiResponse.success("Badge added successfully", null));
-    }
-
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<String>> deleteStudent(@PathVariable String id) {
-        studentService.deleteStudent(id);
-        return ResponseEntity.ok(ApiResponse.success("Student deleted successfully", null));
+    public ResponseEntity<?> getAllStudents() {
+        try { 
+            return ResponseEntity.ok(Map.of("data", studentService.getAllStudents())); 
+           }
+        catch (Exception e) { 
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); 
+        }
     }
 }

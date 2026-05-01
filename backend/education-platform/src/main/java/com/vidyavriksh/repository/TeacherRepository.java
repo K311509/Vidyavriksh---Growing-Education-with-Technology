@@ -8,8 +8,7 @@ import java.util.Optional;
 
 @Repository
 public interface TeacherRepository extends MongoRepository<Teacher, String> {
-    Optional<Teacher> findByTeacherId(String teacherId);
     Optional<Teacher> findByUserId(String userId);
-    List<Teacher> findByDepartment(String department);
-    List<Teacher> findBySubject(String subject);
+    // Teacher model uses assignedSection NOT section
+    List<Teacher> findByAssignedClassAndAssignedSection(String assignedClass, String assignedSection);
 }

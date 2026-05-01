@@ -53,7 +53,7 @@ public class SecurityConfig {
     // Role-based access
     .requestMatchers("/api/admin/**").hasRole("ADMIN")
     .requestMatchers("/api/teacher/**").hasAnyRole("TEACHER", "ADMIN")
-    .requestMatchers("/api/student/**").hasAnyRole("STUDENT", "ADMIN")
+    .requestMatchers("/api/student/**").hasAnyRole("STUDENT", "ADMIN", "PARENT", "TEACHER")
     .requestMatchers("/api/parent/**").hasAnyRole("PARENT", "ADMIN")
 
     .anyRequest().authenticated()
